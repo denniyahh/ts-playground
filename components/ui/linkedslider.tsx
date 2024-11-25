@@ -19,6 +19,7 @@ interface LinkedSliderProps {
   step: number;
   value: string;
   onChange: (value: string) => void;
+  trackColor?: string;
 }
 
 /**
@@ -35,6 +36,7 @@ const LinkedSlider = ({
   step,
   value,
   onChange,
+  trackColor = "bg-primary",
 }: LinkedSliderProps) => {
   const inputId = useId();
 
@@ -58,6 +60,7 @@ const LinkedSlider = ({
           onValueChange={(values: number[]) => {
             onChange(values[0].toString());
           }}
+          trackColor={trackColor}
         />
         <Input
           id={inputId}
@@ -69,7 +72,7 @@ const LinkedSlider = ({
           onChange={(e: ChangeEvent<HTMLInputElement>) => {
             onChange(e.target.value);
           }}
-          className="max-w-[100px]"
+          className="max-w-[100px] bg-gray-200"
         />
       </div>
     </div>

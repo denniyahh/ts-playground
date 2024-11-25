@@ -4,11 +4,10 @@ import { ChangeEvent, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LinkedSlider } from "@/components/ui/linkedslider";
 import { Textarea } from "@/components/ui/textarea";
-import essay from "@/lib/essay";
+import SettingsModal from "@/components/ui/SettingsModal";
 
-const DEFAULT_CHUNK_SIZE = 1024;
+const DEFAULT_CHUNK_SIZE = 3000;
 const DEFAULT_CHUNK_OVERLAP = 20;
 const DEFAULT_TOP_K = 2;
 const DEFAULT_TEMPERATURE = 0.1;
@@ -17,8 +16,7 @@ const DEFAULT_TOP_P = 1;
 export default function Home() {
   const answerId = useId();
   const queryId = useId();
-  const sourceId = useId();
-  const [text, setText] = useState(essay);
+  const [text, setText] = useState("");
   const [query, setQuery] = useState("");
   const [needsNewIndex, setNeedsNewIndex] = useState(true);
   const [buildingIndex, setBuildingIndex] = useState(false);
@@ -35,85 +33,115 @@ export default function Home() {
   );
   const [topP, setTopP] = useState(DEFAULT_TOP_P.toString());
   const [answer, setAnswer] = useState("");
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  const handleFileUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const fileContent = event.target?.result as string;
+        setText(fileContent);
+        setNeedsNewIndex(true);
+
+        // Automatically build index and run query after file upload
+        setAnswer("Building index...");
+        setBuildingIndex(true);
+        setNeedsNewIndex(false);
+
+        const result = await fetch("/api/splitandembed", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            document: fileContent,
+            chunkSize: parseInt(chunkSize),
+            chunkOverlap: parseInt(chunkOverlap),
+          }),
+        });
+
+        const { error, payload } = await result.json();
+
+        if (error) {
+          setAnswer(error);
+        }
+
+        if (payload) {
+          setNodesWithEmbedding(payload.nodesWithEmbedding);
+          setAnswer("Index built!");
+
+          // Automatically run query to extract main characters
+          setAnswer("Extracting main characters...");
+          setRunningQuery(true);
+
+          const queryResult = await fetch("/api/retrieveandquery", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              query: "Extract main characters with their Name, Description, and Personality",
+              nodesWithEmbedding: payload.nodesWithEmbedding,
+              topK: DEFAULT_TOP_K,
+              temperature: DEFAULT_TEMPERATURE,
+              topP: DEFAULT_TOP_P,
+            }),
+          });
+
+          const { error: queryError, payload: queryPayload } = await queryResult.json();
+
+          if (queryError) {
+            setAnswer(queryError);
+          }
+
+          if (queryPayload) {
+            setAnswer(queryPayload.response);
+          }
+
+          setRunningQuery(false);
+        }
+
+        setBuildingIndex(false);
+      };
+      if (file.type != "text/plain") {
+        console.error(`${file.type} parsing not implemented`);
+        setText("Error");
+      } else {
+        reader.readAsText(file);
+      }
+    }
+  };
 
   return (
     <>
       <Head>
         <title>LlamaIndex.TS Playground</title>
       </Head>
-      <main className="mx-2 flex h-full flex-col lg:mx-56">
-        <div className="space-y-2">
-          <Label>Settings:</Label>
+      <main className="mx-2 flex h-full flex-col lg:mx-56 bg-white text-black">
+        <div className="flex justify-between">
           <div>
-            <LinkedSlider
-              label="Chunk Size:"
-              description={
-                "The maximum size of the chunks we are searching over, in tokens. " +
-                "The bigger the chunk, the more likely that the information you are looking " +
-                "for is in the chunk, but also the more likely that the chunk will contain " +
-                "irrelevant information."
-              }
-              min={1}
-              max={3000}
-              step={1}
-              value={chunkSize}
-              onChange={(value: string) => {
-                setChunkSize(value);
-                setNeedsNewIndex(true);
-              }}
+            <input
+              type="file"
+              accept=".txt"
+              id="file-upload"
+              style={{ display: "none" }}
+              onChange={handleFileUpload}
             />
+            <Button onClick={() => document.getElementById('file-upload')?.click()}>
+              Upload Source Text
+            </Button>
           </div>
-          <div>
-            <LinkedSlider
-              label="Chunk Overlap:"
-              description={
-                "The maximum amount of overlap between chunks, in tokens. " +
-                "Overlap helps ensure that sufficient contextual information is retained."
-              }
-              min={1}
-              max={600}
-              step={1}
-              value={chunkOverlap}
-              onChange={(value: string) => {
-                setChunkOverlap(value);
-                setNeedsNewIndex(true);
-              }}
-            />
-          </div>
+          <Button onClick={() => setIsSettingsOpen(true)}>Settings</Button>
         </div>
-        <div className="my-2 flex h-3/4 flex-auto flex-col space-y-2">
-          <Label htmlFor={sourceId}>Upload source text file:</Label>
-          <Input
-            id={sourceId}
-            type="file"
-            accept=".txt"
-            onChange={(e: ChangeEvent<HTMLInputElement>) => {
-              const file = e.target.files?.[0];
-              if (file) {
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                  const fileContent = event.target?.result as string;
-                  setText(fileContent);
-                  setNeedsNewIndex(true);
-                };
-                if (file.type != "text/plain") {
-                  console.error(`${file.type} parsing not implemented`);
-                  setText("Error");
-                } else {
-                  reader.readAsText(file);
-                }
-              }
-            }}
-          />
-          {text && (
-            <Textarea
-              value={text}
-              readOnly
-              placeholder="File contents will appear here"
-              className="flex-1"
-            />
-          )}
-        </div>
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          chunkSize={chunkSize}
+          setChunkSize={setChunkSize}
+          chunkOverlap={chunkOverlap}
+          setChunkOverlap={setChunkOverlap}
+        />
         <Button
           disabled={!needsNewIndex || buildingIndex || runningQuery}
           onClick={async () => {
@@ -151,106 +179,8 @@ export default function Home() {
 
         {!buildingIndex && !needsNewIndex && !runningQuery && (
           <>
-            <LinkedSlider
-              className="my-2"
-              label="Top K:"
-              description={
-                "The maximum number of chunks to return from the search. " +
-                "It's called Top K because we are retrieving the K nearest neighbors of the query."
-              }
-              min={1}
-              max={15}
-              step={1}
-              value={topK}
-              onChange={(value: string) => {
-                setTopK(value);
-              }}
-            />
-
-            <LinkedSlider
-              className="my-2"
-              label="Temperature:"
-              description={
-                "Temperature controls the variability of model response. Adjust it " +
-                "downwards to get more consistent responses, and upwards to get more diversity."
-              }
-              min={0}
-              max={1}
-              step={0.01}
-              value={temperature}
-              onChange={(value: string) => {
-                setTemperature(value);
-              }}
-            />
-
-            <LinkedSlider
-              className="my-2"
-              label="Top P:"
-              description={
-                "Top P is another way to control the variability of the model " +
-                "response. It filters out low probability options for the model. It's " +
-                "recommended by OpenAI to set temperature to 1 if you're adjusting " +
-                "the top P."
-              }
-              min={0}
-              max={1}
-              step={0.01}
-              value={topP}
-              onChange={(value: string) => {
-                setTopP(value);
-              }}
-            />
-
-            <div className="my-2 space-y-2">
-              <Label htmlFor={queryId}>Query:</Label>
-              <div className="flex w-full space-x-2">
-                <Input
-                  id={queryId}
-                  value={query}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                    setQuery(e.target.value);
-                  }}
-                />
-                <Button
-                  type="submit"
-                  disabled={needsNewIndex || buildingIndex || runningQuery}
-                  onClick={async () => {
-                    setAnswer("Running query...");
-                    setRunningQuery(true);
-                    // Post the query and nodesWithEmbedding to the server
-                    const result = await fetch("/api/retrieveandquery", {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                      },
-                      body: JSON.stringify({
-                        query,
-                        nodesWithEmbedding,
-                        topK: parseInt(topK),
-                        temperature: parseFloat(temperature),
-                        topP: parseFloat(topP),
-                      }),
-                    });
-
-                    const { error, payload } = await result.json();
-
-                    if (error) {
-                      setAnswer(error);
-                    }
-
-                    if (payload) {
-                      setAnswer(payload.response);
-                    }
-
-                    setRunningQuery(false);
-                  }}
-                >
-                  Submit
-                </Button>
-              </div>
-            </div>
             <div className="my-2 flex h-1/4 flex-auto flex-col space-y-2">
-              <Label htmlFor={answerId}>Answer:</Label>
+              <Label htmlFor={answerId}>Main Characters:</Label>
               <Textarea
                 className="flex-1"
                 readOnly
