@@ -34,6 +34,7 @@ export default function Home() {
   const [topP, setTopP] = useState(DEFAULT_TOP_P.toString());
   const [answer, setAnswer] = useState("");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [mainCharacters, setMainCharacters] = useState<any[]>([]);
 
   const handleFileUpload = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -81,7 +82,7 @@ export default function Home() {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              query: "Extract main characters with their Name, Description, and Personality",
+              query: "Extract only the top main characters with their Name, Description, and Personality",
               nodesWithEmbedding: payload.nodesWithEmbedding,
               topK: DEFAULT_TOP_K,
               temperature: DEFAULT_TEMPERATURE,
@@ -96,7 +97,13 @@ export default function Home() {
           }
 
           if (queryPayload) {
-            setAnswer(queryPayload.response);
+            if (Array.isArray(queryPayload.response)) {
+              setMainCharacters(queryPayload.response);
+            } else {
+              console.error("Expected an array for main characters");
+              setMainCharacters([]);
+            }
+            setAnswer("");
           }
 
           setRunningQuery(false);
@@ -181,12 +188,24 @@ export default function Home() {
           <>
             <div className="my-2 flex h-1/4 flex-auto flex-col space-y-2">
               <Label htmlFor={answerId}>Main Characters:</Label>
-              <Textarea
-                className="flex-1"
-                readOnly
-                value={answer}
-                id={answerId}
-              />
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead>
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Personality</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {mainCharacters.map((character, index) => (
+                    <tr key={index}>
+                      <td className="px-6 py-4 whitespace-nowrap">{character.name}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">{character.description}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">{character.personality}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </>
         )}
